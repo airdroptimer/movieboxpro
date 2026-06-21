@@ -32,7 +32,6 @@ templates = Jinja2Templates(directory="templates")
 # FastAPI Startup
 @app.on_event("startup")
 async def startup_event():
-    # Run bot in background task to avoid Render Timeout RuntimeError
     asyncio.create_task(bot.start())
 
 @app.on_event("shutdown")
@@ -62,14 +61,10 @@ async def receive_movie(client, message: Message):
         file_name = ""
         if message.video:
             file_name = message.video.file_name or "Movie"
-            quality = f"{message.video.width}x{message.video.height}"
-            duration = message.video.duration
             file_size = message.video.file_size
             file_id = message.video.file_id
         else:
             file_name = message.document.file_name or "Movie"
-            quality = "Unknown"
-            duration = 0
             file_size = message.document.file_size
             file_id = message.document.file_id
 
@@ -112,7 +107,6 @@ async def stream_movie(movie_id: str):
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     
-    # Download file to memory and stream
     media = await bot.download_media(movie["file_id"], in_memory=True)
     
     headers = {
