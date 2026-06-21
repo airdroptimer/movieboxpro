@@ -49,57 +49,83 @@ templates = Jinja2Templates(directory="templates")
 # ---------------- Bot Handlers ----------------
 @bot.on_message(filters.command("start") & filters.private)
 async def start_command(client, message: Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.reply_text("🎬 **MovieBoxBD Bot**\n\nSend me a Movie File (MP4/MKV) to upload.")
+    # এডমিন চেকিং একটু নরমাল করা হলো
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id == ADMIN_ID:
+        await message.reply_text(
+            "🎬 **MovieBoxBD Bot**\n\n"
+            "Send me a Movie File (MP4/MKV) to upload.\n"
+            "Use `/movies` to see all uploaded movies."
+        )
     else:
         await message.reply_text("This bot is for admin use only.")
 
 @bot.on_message((filters.video | filters.document) & filters.private)
 async def receive_movie(client, message: Message):
-    if message.from_user.id != ADMIN_ID:
+    # যদি ফরওয়ার্ড করা থাকে তবে from_user নাও থাকতে পারে, তাই সেফটি চেক
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id != ADMIN_ID:
         return
     
     status = await message.reply_text("Processing your movie...")
     
-    # Forward to DB Channel
-    forwarded = await message.copy(DB_CHANNEL_ID)
-    
-    file_name = ""
-    if message.video:
-        file_name = message.video.file_name or "Movie"
-        quality = f"{message.video.width}x{message.video.height}"
-        duration = message.video.duration
-        file_size = message.video.file_size
-        file_id = message.video.file_id
-    else:
-        file_name = message.document.file_name or "Movie"
-        quality = "Unknown"
-        duration = 0
-        file_size = message.document.file_size
-        file_id = message.document.file_id
+    try:
+        # Forward to DB Channel
+        forwarded = await message.copy(DB_CHANNEL_ID)
+        
+        file_name = ""
+        if message.video:
+            file_name = message.video.file_name or "Movie"
+            quality = f"{message.video.width}x{message.video.height}"
+            duration = message.video.duration
+            file_size = message.video.file_size
+            file_id = message.video.file_id
+        else:
+            file_name = message.document.file_name or "Movie"
+            quality = "Unknown"
+            duration = 0
+            file_size = message.document.file_size
+            file_id = message.document.file_id
 
-    title = message.caption if message.caption else file_name.split('.')[0]
-    movie_id = str(uuid.uuid4())[:8]
+        title = message.caption if message.caption else file_name.split('.')[0]
+        movie_id = str(uuid.uuid4())[:8]
+        
+        movie_data = {
+            "_id": movie_id,
+            "title": title,
+            "year": "N/A",
+            "genre": "N/A",
+            "language": "N/A",
+            "quality": quality,
+            "duration": duration,
+            "file_size": file_size,
+            "file_id": file_id,
+            "message_id": forwarded.id
+        }
+        
+        await db.add_movie(movie_data)
+        link = f"{BASE_URL}/movie/{movie_id}"
+        
+        await status.edit_text(
+            f"✅ **Movie Uploaded!**\n\n**Title:** {title}\n**Link:** [Click Here]({link})"
+        )
+    except Exception as e:
+        await status.edit_text(f"❌ Error: {e}")
+
+@bot.on_message(filters.command("movies") & filters.private)
+async def list_movies(client, message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id != ADMIN_ID:
+        return
+    movies = await db.get_all_movies()
+    if not movies:
+        await message.reply_text("No movies found.")
+        return
     
-    movie_data = {
-        "_id": movie_id,
-        "title": title,
-        "year": "N/A",
-        "genre": "N/A",
-        "language": "N/A",
-        "quality": quality,
-        "duration": duration,
-        "file_size": file_size,
-        "file_id": file_id,
-        "message_id": forwarded.id
-    }
-    
-    await db.add_movie(movie_data)
-    link = f"{BASE_URL}/movie/{movie_id}"
-    
-    await status.edit_text(
-        f"✅ **Movie Uploaded!**\n\n**Title:** {title}\n**Link:** [Click Here]({link})"
-    )
+    text = "🎬 **Uploaded Movies:**\n\n"
+    for movie in movies:
+        text += f"**{movie['title']}**\nLink: {BASE_URL}/movie/{movie['_id']}\n\n"
+    await message.reply_text(text)
 
 # ---------------- Web Routes ----------------
 @app.get("/", response_class=HTMLResponse)
