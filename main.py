@@ -74,8 +74,8 @@ async def receive_movie(client, message: Message):
     status = await message.reply_text("Processing your movie...")
     
     try:
-        # ফাইল পাওয়ার ঠিক পরেই বটকে চ্যানেল চিনিয়ে দেওয়া হচ্ছে
-        await client.get_chat(DB_CHANNEL_ID)
+        # বটকে বাধ্য করে চ্যানেলের ঠিকানা মেমোরিতে সেভ করে নিতে দেওয়া হচ্ছে
+        await client.resolve_peer(DB_CHANNEL_ID)
         
         forwarded = await message.copy(DB_CHANNEL_ID)
         
