@@ -6,7 +6,8 @@ MONGO_URI = os.environ.get("MONGO_URI", "your_mongodb_atlas_uri_here")
 class Database:
     def __init__(self):
         self.client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-        self.db = self.client.movieboxbd
+        # ডাটাবেসের নাম ঠিক করে দেওয়া হলো (MovieBoxBD)
+        self.db = self.client.get_database("MovieBoxBD")
         self.movies = self.db.movies
 
     async def add_movie(self, movie_data):
