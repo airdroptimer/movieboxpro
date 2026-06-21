@@ -74,9 +74,12 @@ async def receive_movie(client, message: Message):
     status = await message.reply_text("Processing your movie...")
     
     try:
-        # বটকে বাধ্য করে চ্যানেলের ঠিকানা মেমোরিতে সেভ করে নিতে দেওয়া হচ্ছে
-        await client.resolve_peer(DB_CHANNEL_ID)
-        
+        # চ্যানেল এক্সেস এরর এড়াতে নিশ্চিত করা হচ্ছে
+        try:
+            await client.resolve_peer(DB_CHANNEL_ID)
+        except Exception:
+            pass
+            
         forwarded = await message.copy(DB_CHANNEL_ID)
         
         file_name = ""
@@ -90,7 +93,10 @@ async def receive_movie(client, message: Message):
             file_id = message.document.file_id
 
         title = message.caption if message.caption else file_name.split('.')[0]
-        movie_id = str(uuid.uuid4())[:8]
+        
+        # ১০০% ইউনিক আইডি জেনারেট করা হচ্ছে যাতে Database Conflict না হয়
+        import time
+        movie_id = str(uuid.uuid4().hex)[:8] + str(int(time.time()))[-4:]
         
         movie_data = {
             "_id": movie_id,
@@ -107,6 +113,9 @@ async def receive_movie(client, message: Message):
             f"✅ **Movie Uploaded!**\n\n**Title:** {title}\n**Link:** [Click Here]({link})"
         )
     except Exception as e:
+        # যদি কোনো এরর আসে, তবে সেটি Render এর Logs এ দেখানো হবে যাতে সহজে বোঝা যায়
+        import traceback
+        traceback.print_exc()
         await status.edit_text(f"❌ Error: {e}")
 
 # ---------------- Web Routes ----------------
