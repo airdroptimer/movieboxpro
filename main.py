@@ -2,7 +2,7 @@ import os
 import uuid
 import asyncio
 from fastapi import FastAPI, Request, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pyrogram import Client, filters
@@ -15,7 +15,7 @@ API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
 DB_CHANNEL_ID = int(os.environ.get("DB_CHANNEL_ID", 0))
-BASE_URL = os.environ.get("BASE_URL", "https://your-app.onrender.com")
+BASE_URL = os.environ.get("BASE_URL", "https://movieboxstream.onrender.com")
 
 bot = Client(
     "movie_bot",
@@ -29,28 +29,19 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# FastAPI Startup
 @app.on_event("startup")
 async def startup_event():
-    # Start bot in background
     asyncio.create_task(start_bot_background())
 
 async def start_bot_background():
     await bot.start()
-    
-    # বট চালু হওয়ার সাথে সাথে চ্যানেলে একটি মেসেজ পাঠিয়ে চ্যানেলটিকে "Resolve" করে নিবে
     try:
         await bot.send_message(DB_CHANNEL_ID, "🤖 Bot has started successfully!")
         print("DB Channel resolved successfully!")
     except Exception as e:
         print(f"Failed to resolve DB Channel: {e}")
-        
     while True:
         await asyncio.sleep(3600)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await bot.stop()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -74,12 +65,6 @@ async def receive_movie(client, message: Message):
     status = await message.reply_text("Processing your movie...")
     
     try:
-        # চ্যানেল এক্সেস এরর এড়াতে নিশ্চিত করা হচ্ছে
-        try:
-            await client.resolve_peer(DB_CHANNEL_ID)
-        except Exception:
-            pass
-            
         forwarded = await message.copy(DB_CHANNEL_ID)
         
         file_name = ""
@@ -94,7 +79,6 @@ async def receive_movie(client, message: Message):
 
         title = message.caption if message.caption else file_name.split('.')[0]
         
-        # ১০০% ইউনিক আইডি জেনারেট করা হচ্ছে যাতে Database Conflict না হয়
         import time
         movie_id = str(uuid.uuid4().hex)[:8] + str(int(time.time()))[-4:]
         
@@ -113,7 +97,6 @@ async def receive_movie(client, message: Message):
             f"✅ **Movie Uploaded!**\n\n**Title:** {title}\n**Link:** [Click Here]({link})"
         )
     except Exception as e:
-        # যদি কোনো এরর আসে, তবে সেটি Render এর Logs এ দেখানো হবে যাতে সহজে বোঝা যায়
         import traceback
         traceback.print_exc()
         await status.edit_text(f"❌ Error: {e}")
@@ -132,18 +115,45 @@ async def movie_page(request: Request, movie_id: str):
     return templates.TemplateResponse("movie.html", {"request": request, "movie": movie, "page": "details"})
 
 @app.get("/stream/{movie_id}")
-async def stream_movie(movie_id: str):
+async def stream_movie(request: Request, movie_id: str):
     movie = await db.get_movie(movie_id)
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     
-    media = await bot.download_media(movie["file_id"], in_memory=True)
+    file_size = movie["file_size"]
+    chunk_size = 1024 * 1024  # 1MB chunks
     
+    range_start = 0
+    range_end = file_size - 1
+    
+    range_header = request.headers.get("range")
+    if range_header:
+        start_str = range_header.replace("bytes=", "").split("-")[0]
+        range_start = int(start_str)
+        range_end = min(range_start + chunk_size - 1, file_size - 1)
+        
+    async def video_streamer():
+        bytes_yielded = 0
+        bytes_to_yield = (range_end - range_start) + 1
+        
+        async for chunk in bot.stream(DB_CHANNEL_ID, movie["message_id"], limit=bytes_to_yield, offset=range_start):
+            if bytes_yielded + len(chunk) > bytes_to_yield:
+                yield chunk[:bytes_to_yield - bytes_yielded]
+                break
+            else:
+                yield chunk
+                bytes_yielded += len(chunk)
+                if bytes_yielded >= bytes_to_yield:
+                    break
+
     headers = {
-        "Content-Disposition": f"inline; filename=\"{movie['title']}.mp4\"",
+        "Content-Range": f"bytes {range_start}-{range_end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(range_end - range_start + 1),
         "Content-Type": "video/mp4"
     }
-    return Response(content=media.getvalue(), headers=headers)
+    
+    return StreamingResponse(video_streamer(), status_code=206 if range_header else 200, headers=headers)
 
 @app.get("/download/{movie_id}")
 async def download_movie(movie_id: str):
@@ -151,12 +161,15 @@ async def download_movie(movie_id: str):
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     
-    media = await bot.download_media(movie["file_id"], in_memory=True)
+    async def file_downloader():
+        async for chunk in bot.stream(DB_CHANNEL_ID, movie["message_id"], limit=0):
+            yield chunk
+
     headers = {
         "Content-Disposition": f"attachment; filename=\"{movie['title']}.mp4\"",
-        "Content-Type": "video/mp4"
+        "Content-Length": str(movie["file_size"])
     }
-    return Response(content=media.getvalue(), headers=headers)
+    return StreamingResponse(file_downloader(), media_type="video/mp4", headers=headers)
 
 @app.get("/watch/{movie_id}", response_class=HTMLResponse)
 async def watch_page(request: Request, movie_id: str):
