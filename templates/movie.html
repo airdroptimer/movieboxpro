@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MovieBoxBD - Premium Streaming</title>
+    <title>MovieBoxBD</title>
     <link rel="stylesheet" href="/static/style.css">
-    <!-- 💰 Ads Script (Asynchronous) -->
     <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
 </head>
 <body>
@@ -35,14 +34,10 @@
                     <span>{{ movie.quality }}</span>
                     <span>{{ (movie.file_size / 1048576)|round(2) }} MB</span>
                 </div>
-                
-                <a href="/watch/{{ movie._id }}" class="btn">▶️ Watch Online</a>
-                <br>
+                <a href="/watch/{{ movie._id }}" class="btn">▶️ Watch Online</a><br>
                 <a href="/download/{{ movie._id }}" class="btn btn-download">⬇️ Download Movie</a>
             </div>
         {% endif %}
     </div>
-    <!-- Footer Ads -->
-    <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
 </body>
 </html>
