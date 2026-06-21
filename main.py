@@ -1,17 +1,13 @@
 import os
 import uuid
 import asyncio
-import nest_asyncio
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from database import db
-
-nest_asyncio.apply()
 
 # Environment Variables
 API_ID = int(os.environ.get("API_ID", 0))
@@ -29,40 +25,31 @@ bot = Client(
     in_memory=True
 )
 
-# Lifespan to run bot in background
-async def start_bot_background():
-    await bot.start()
-    while True:
-        await asyncio.sleep(3600)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(start_bot_background())
-    yield
-    await bot.stop()
-    task.cancel()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# FastAPI Startup
+@app.on_event("startup")
+async def startup_event():
+    # Run bot in background task to avoid Render Timeout RuntimeError
+    asyncio.create_task(bot.start())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await bot.stop()
 
 # ---------------- Bot Handlers ----------------
 @bot.on_message(filters.command("start") & filters.private)
 async def start_command(client, message: Message):
-    # এডমিন চেকিং একটু নরমাল করা হলো
     user_id = message.from_user.id if message.from_user else 0
     if user_id == ADMIN_ID:
-        await message.reply_text(
-            "🎬 **MovieBoxBD Bot**\n\n"
-            "Send me a Movie File (MP4/MKV) to upload.\n"
-            "Use `/movies` to see all uploaded movies."
-        )
+        await message.reply_text("🎬 **MovieBoxBD Bot**\n\nSend me a Movie File (MP4/MKV) to upload.")
     else:
         await message.reply_text("This bot is for admin use only.")
 
 @bot.on_message((filters.video | filters.document) & filters.private)
 async def receive_movie(client, message: Message):
-    # যদি ফরওয়ার্ড করা থাকে তবে from_user নাও থাকতে পারে, তাই সেফটি চেক
     user_id = message.from_user.id if message.from_user else 0
     if user_id != ADMIN_ID:
         return
@@ -70,7 +57,6 @@ async def receive_movie(client, message: Message):
     status = await message.reply_text("Processing your movie...")
     
     try:
-        # Forward to DB Channel
         forwarded = await message.copy(DB_CHANNEL_ID)
         
         file_name = ""
@@ -93,11 +79,6 @@ async def receive_movie(client, message: Message):
         movie_data = {
             "_id": movie_id,
             "title": title,
-            "year": "N/A",
-            "genre": "N/A",
-            "language": "N/A",
-            "quality": quality,
-            "duration": duration,
             "file_size": file_size,
             "file_id": file_id,
             "message_id": forwarded.id
@@ -112,21 +93,6 @@ async def receive_movie(client, message: Message):
     except Exception as e:
         await status.edit_text(f"❌ Error: {e}")
 
-@bot.on_message(filters.command("movies") & filters.private)
-async def list_movies(client, message: Message):
-    user_id = message.from_user.id if message.from_user else 0
-    if user_id != ADMIN_ID:
-        return
-    movies = await db.get_all_movies()
-    if not movies:
-        await message.reply_text("No movies found.")
-        return
-    
-    text = "🎬 **Uploaded Movies:**\n\n"
-    for movie in movies:
-        text += f"**{movie['title']}**\nLink: {BASE_URL}/movie/{movie['_id']}\n\n"
-    await message.reply_text(text)
-
 # ---------------- Web Routes ----------------
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -138,54 +104,22 @@ async def movie_page(request: Request, movie_id: str):
     movie = await db.get_movie(movie_id)
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return templates.TemplateResponse("movie.html", {"request": request, "movie": movie, "movies": None, "page": "details"})
+    return templates.TemplateResponse("movie.html", {"request": request, "movie": movie, "page": "details"})
 
-# Advanced Streaming with Range Request Support (Bypasses Render Bandwidth & Timeout limits partially)
 @app.get("/stream/{movie_id}")
-async def stream_movie(request: Request, movie_id: str):
+async def stream_movie(movie_id: str):
     movie = await db.get_movie(movie_id)
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     
-    file_size = movie["file_size"]
-    chunk_size = 1024 * 1024  # 1MB chunks
+    # Download file to memory and stream
+    media = await bot.download_media(movie["file_id"], in_memory=True)
     
-    range_start = 0
-    range_end = file_size - 1
-    
-    range_header = request.headers.get("range")
-    if range_header:
-        # e.g., bytes=0-1023
-        start_str = range_header.replace("bytes=", "").split("-")[0]
-        range_start = int(start_str)
-        range_end = min(range_start + chunk_size - 1, file_size - 1)
-        
-    async def video_streamer():
-        bytes_yielded = 0
-        bytes_to_yield = (range_end - range_start) + 1
-        
-        # Stream directly from Telegram servers in chunks
-        async for chunk in bot.stream(DB_CHANNEL_ID, movie["message_id"], limit=bytes_to_yield, offset=range_start):
-            if bytes_yielded + len(chunk) > bytes_to_yield:
-                # Trim the last chunk to match exact requested size
-                yield chunk[:bytes_to_yield - bytes_yielded]
-                break
-            else:
-                yield chunk
-                bytes_yielded += len(chunk
-                )
-                if bytes_yielded >= bytes_to_yield:
-                    break
-
     headers = {
-        "Content-Range": f"bytes {range_start}-{range_end}/{file_size}",
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(range_end - range_start + 1),
+        "Content-Disposition": f"inline; filename=\"{movie['title']}.mp4\"",
         "Content-Type": "video/mp4"
     }
-    
-    # 206 Partial Content is required for video streaming
-    return StreamingResponse(video_streamer(), status_code=206 if range_header else 200, headers=headers)
+    return Response(content=media.getvalue(), headers=headers)
 
 @app.get("/download/{movie_id}")
 async def download_movie(movie_id: str):
@@ -193,15 +127,12 @@ async def download_movie(movie_id: str):
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     
-    async def file_downloader():
-        async for chunk in bot.stream(DB_CHANNEL_ID, movie["message_id"], limit=0):
-            yield chunk
-
+    media = await bot.download_media(movie["file_id"], in_memory=True)
     headers = {
         "Content-Disposition": f"attachment; filename=\"{movie['title']}.mp4\"",
-        "Content-Length": str(movie["file_size"])
+        "Content-Type": "video/mp4"
     }
-    return StreamingResponse(file_downloader(), media_type="video/mp4", headers=headers)
+    return Response(content=media.getvalue(), headers=headers)
 
 @app.get("/watch/{movie_id}", response_class=HTMLResponse)
 async def watch_page(request: Request, movie_id: str):
