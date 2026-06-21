@@ -37,14 +37,20 @@ async def startup_event():
 
 async def start_bot_background():
     await bot.start()
-    # Bot চালু হওয়ার পর চ্যানেলটি চিনে নিবে
+    
+    # বট চালু হওয়ার সাথে সাথে চ্যানেলে একটি মেসেজ পাঠিয়ে চ্যানেলটিকে "Resolve" করে নিবে
     try:
-        await bot.get_chat(DB_CHANNEL_ID)
+        await bot.send_message(DB_CHANNEL_ID, "🤖 Bot has started successfully!")
         print("DB Channel resolved successfully!")
     except Exception as e:
         print(f"Failed to resolve DB Channel: {e}")
+        
     while True:
         await asyncio.sleep(3600)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await bot.stop()
 
 @app.on_event("shutdown")
 async def shutdown_event():
