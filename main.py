@@ -32,7 +32,19 @@ templates = Jinja2Templates(directory="templates")
 # FastAPI Startup
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(bot.start())
+    # Start bot in background
+    asyncio.create_task(start_bot_background())
+
+async def start_bot_background():
+    await bot.start()
+    # Bot চালু হওয়ার পর চ্যানেলটি চিনে নিবে
+    try:
+        await bot.get_chat(DB_CHANNEL_ID)
+        print("DB Channel resolved successfully!")
+    except Exception as e:
+        print(f"Failed to resolve DB Channel: {e}")
+    while True:
+        await asyncio.sleep(3600)
 
 @app.on_event("shutdown")
 async def shutdown_event():
