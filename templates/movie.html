@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MovieBoxBD - Premium Streaming</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- 💰 Ads Script (Asynchronous) -->
+    <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
+</head>
+<body>
+    <div class="container">
+        {% if page == "home" %}
+            <h1 style="color: #e50914; margin-top: 20px;">MovieBoxBD</h1>
+            <div class="movie-grid">
+                {% for m in movies %}
+                    <a href="/movie/{{ m._id }}" class="movie-card">
+                        <div style="background:#333; height:300px; display:flex; align-items:center; justify-content:center;">
+                            <span>{{ m.title }}</span>
+                        </div>
+                        <div style="padding:10px;">
+                            <p style="font-weight:bold;">{{ m.title }}</p>
+                            <p style="font-size:0.8rem; color:#aaa;">{{ m.year }} • {{ m.quality }}</p>
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+        {% elif page == "details" %}
+            <div class="movie-details">
+                <h1>{{ movie.title }}</h1>
+                <div class="meta-data">
+                    <span>{{ movie.year }}</span>
+                    <span>{{ movie.genre }}</span>
+                    <span>{{ movie.language }}</span>
+                    <span>{{ movie.quality }}</span>
+                    <span>{{ (movie.file_size / 1048576)|round(2) }} MB</span>
+                </div>
+                
+                <a href="/watch/{{ movie._id }}" class="btn">▶️ Watch Online</a>
+                <br>
+                <a href="/download/{{ movie._id }}" class="btn btn-download">⬇️ Download Movie</a>
+            </div>
+        {% endif %}
+    </div>
+    <!-- Footer Ads -->
+    <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
+</body>
+</html>
