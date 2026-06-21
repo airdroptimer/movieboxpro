@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watching: {{ movie.title }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- 💰 Ads Script -->
+    <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="video-container">
+            <!-- MovieBoxBD Watermark -->
+            <div class="watermark">MovieBoxBD</div>
+            
+            <video controls autoplay>
+                <source src="{{ stream_link }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+        
+        <div class="movie-details">
+            <a href="/movie/{{ movie._id }}" class="btn" style="background:#333;">⬅️ Back to Details</a>
+            <br>
+            <a href="/download/{{ movie._id }}" class="btn btn-download">⬇️ Download Movie</a>
+        </div>
+    </div>
+    <script async="true" src="https://pl21423250.effectivecpmnetwork.com/1d/c3/f8/1dc3f8acdb14ff956d47dfdf409aaeeb.js"></script>
+</body>
+</html>
